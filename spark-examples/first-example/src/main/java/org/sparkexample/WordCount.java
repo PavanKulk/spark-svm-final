@@ -12,6 +12,10 @@ import scala.Tuple2;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.HashMap;
+import java.io.PrintWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.UnsupportedEncodingException;
 
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
@@ -42,12 +46,12 @@ public class WordCount {
         }
       };
 
-  public static void main(String[] args) {
+  public static void main(String[] args) throws FileNotFoundException {
     if (args.length < 1) {
       System.err.println("Please provide the input file full path as argument");
       System.exit(0);
     }
-
+    
     SparkConf conf = new SparkConf().setAppName("org.sparkexample.WordCount").setMaster("local");
     System.out.println("<-----------Application name and master set----------->");
     JavaSparkContext context = new JavaSparkContext(conf);
@@ -76,7 +80,11 @@ public class WordCount {
         }
     });
     training.cache();
-    System.out.println("Training count = "+ training.count());
+    String filename = "result.txt"+Long.toString(training.count());
+    try{
+        PrintWriter writer = new PrintWriter(filename, "UTF-8");
+
+    writer.println("Training count = "+ training.count());
     
     JavaRDD maleTraining = context.textFile(args[1]).cache().map(new Function<String,LabeledPoint> () {
 
@@ -101,7 +109,7 @@ public class WordCount {
         }
     });
     maleTraining.cache();
-    System.out.println("Male Training count = "+ maleTraining.count());
+    writer.println("Male Training count = "+ maleTraining.count());
 
     JavaRDD femaleTraining = context.textFile(args[2]).cache().map(new Function<String,LabeledPoint> () {
 
@@ -126,7 +134,7 @@ public class WordCount {
         }
     });
     femaleTraining.cache();
-    System.out.println("Female Training count = "+ femaleTraining.count());
+    writer.println("Female Training count = "+ femaleTraining.count());
 
 
 
@@ -147,12 +155,12 @@ public class WordCount {
         }
     });
     test.cache();
-    System.out.println("Test count = "+test.count());
+    writer.println("Test count = "+test.count());
 
     long startTime = System.nanoTime();    
     final NaiveBayesModel model = NaiveBayes.train(training.rdd(), 1.0);
     long endTime = System.nanoTime();
-    System.out.println("Time taken for NaiveBayes training in nano seconds = "+(endTime-startTime));
+    writer.println("Time taken for NaiveBayes training in nano seconds = "+(endTime-startTime));
 
     JavaPairRDD<Double, Double> predictionAndLabel = test.mapToPair(new PairFunction<LabeledPoint, Double, Double>() {
         @Override
@@ -168,7 +176,7 @@ public class WordCount {
             return pl._1().intValue() == pl._2().intValue();
         }
     }).count() / (double)test.count();
-    System.out.println("navie bayes accuracy : " + accuracy);
+    writer.println("navie bayes accuracy : " + accuracy);
 
     Double stepSize = 100.0;
     Double regParam = 0.00001;
@@ -177,12 +185,12 @@ public class WordCount {
     startTime = System.nanoTime();    
     final SVMModel malesvmModel = SVMWithSGD.train(maleTraining.rdd(), Integer.parseInt(args[4]), stepSize, regParam, miniBatchFraction);
     endTime = System.nanoTime();
-    System.out.println("Time taken for male SVM training in nano seconds = "+(endTime-startTime));
+    writer.println("Time taken for male SVM training in nano seconds = "+(endTime-startTime));
 
     startTime = System.nanoTime();    
     final SVMModel femaleSVMModel = SVMWithSGD.train(femaleTraining.rdd(), Integer.parseInt(args[4]), stepSize, regParam, miniBatchFraction);
     endTime = System.nanoTime();
-    System.out.println("Time taken for female SVM training in nano seconds = "+(endTime-startTime));
+    writer.println("Time taken for female SVM training in nano seconds = "+(endTime-startTime));
 
     for(double mbFraction = 0.2; mbFraction<= 1.0; mbFraction += 0.2) {
         //System.out.println("<-----minibatchFraction = "+mbFraction+"----->");
@@ -192,7 +200,7 @@ public class WordCount {
         final SVMModel svmModel = SVMWithSGD.train(training.rdd(), Integer.parseInt(args[4]), stepSize, regParam, mbFraction);
         endTime = System.nanoTime();
         //System.out.println("<-----minibatchFraction = "+mbFraction+"----->");
-        System.out.println("Time taken for SVM training for mbFraction =" +mbFraction + " regParam = "+regParam+" in nano seconds = "+(endTime-startTime));
+        writer.println("Time taken for SVM training for mbFraction =" +mbFraction + " regParam = "+regParam+" in nano seconds = "+(endTime-startTime));
         //System.out.println("Training complete");
 
         JavaPairRDD<Double, Double> predictionAndLabelSVM = test.mapToPair(new PairFunction<LabeledPoint, Double, Double>() {
@@ -209,7 +217,7 @@ public class WordCount {
                 return pl._1().intValue() == pl._2().intValue();
             }
         }).count() / (double)test.count();
-        System.out.println("svm accuracy : for mbFraction =" +mbFraction + " regParam = "+regParam+" = " + accuracySVM);
+        writer.println("svm accuracy : for mbFraction =" +mbFraction + " regParam = "+regParam+" = " + accuracySVM);
     }
     }
     
@@ -224,7 +232,7 @@ public class WordCount {
     final DecisionTreeModel DTmodel = DecisionTree.trainClassifier(training, numClasses,
       categoricalFeaturesInfo, impurity, maxDepth, maxBins);
     endTime = System.nanoTime();
-    System.out.println("Time taken for Decision Tree training in nano seconds = "+(endTime-startTime));
+    writer.println("Time taken for Decision Tree training in nano seconds = "+(endTime-startTime));
 
     JavaPairRDD<Double, Double> predictionAndLabelDT = test.mapToPair(new PairFunction<LabeledPoint, Double, Double>() {
         @Override
@@ -239,8 +247,12 @@ public class WordCount {
             return pl._1().equals(pl._2());
         }
     }).count() / (double)test.count();
-    System.out.println("Decision Tree accurarcy: " + accuracyDT);
-
+    writer.println("Decision Tree accurarcy: " + accuracyDT);
+    writer.close();
+    } catch(FileNotFoundException ex){
+    }
+    catch(UnsupportedEncodingException ex){
+    }
     //System.out.println("Training count = "+ training.toArray());
     /*JavaRDD<String> file = context.textFile(args[0]);
     JavaRDD<String> words = file.flatMap(WORDS_EXTRACTOR);
